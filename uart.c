@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "common.h"
+
 #define buffSize  1000
 
 HANDLE hComm;                          // Handle to the Serial port
@@ -119,13 +121,13 @@ void comSend(const char* data, int len)
 
 int comRead(char *buff, int bufSize)
 {	
-	DWORD NoBytesRead;
-	ReadFile(hComm, buff, bufSize, &NoBytesRead, 0);
+	int bytesRead;
+	ReadFile(hComm, buff, bufSize, &bytesRead, 0);
 
-	if (NoBytesRead > 0 && NoBytesRead < bufSize)
+	if (bytesRead > 0 && bytesRead < bufSize)
 	{
-		buff[NoBytesRead] = 0;
+		buff[bytesRead] = 0;
 	}
 
-	return NoBytesRead;			
+	return bytesRead;
 }

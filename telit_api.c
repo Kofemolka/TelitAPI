@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "common.h"
 #include "telit_api.h"
 #include "util.h"
 
@@ -11,7 +12,7 @@ extern void comSend(const char* data, int len);
 extern int comRead(char *buff, int bufSize);
 
 #define INPUT_BUFF_SIZE 256
-#define MAX_RECV_TIMEOUT 10
+#define MAX_RECV_TIMEOUT 5
 #define CMD_RETRY_COUNT	3
 #define MAX_RECV_BYTES 900
 
@@ -24,85 +25,56 @@ static at_err_code_t recv_response_processor(const char* data, int len, void(*ha
 	const char cSSLRECV[] = "#SSLRECV=1,%d";
 	const char cSSLRECV_ACK[] = "#SSLRECV:";
 	
-	static long byte2receive = 0;
-	static short sslRecvFound = 0;
+	if (strncmp(data, cRING, strlen(cRING)) == 0)
+	{		
+		char cmd[20];
+		sprintf(cmd, cSSLRECV, MAX_RECV_BYTES);
 
-	/*if (strncmp(token, cRING, strlen(cRING)) == 0)
-	{
-		char tmp[20];
-		//strncpy(tmp, token + strlen(cRING), strlen(token) - strlen(cRING));
-		strtrim(token + strlen(cRING), tmp);
-
-		if (*tmp != 0 && strlen(tmp) > 2)
-		{
-			char* vals = tmp + 2; //1,xxxx
-			byte2receive = min(atoi(vals), MAX_RECV_BYTES);
-			sslRecvFound = 0;
-			byte2receive = MAX_RECV_BYTES;
-
-			char cmd[20];
-			sprintf(cmd, cSSLRECV, byte2receive);			
-
-			at_cmd_send(cmd);			
-		}
+		at_cmd_send(cmd);
 
 		return AT_NONE;
 	}
-	else if (strncmp(token, cSSLRECV_ACK, strlen(cSSLRECV_ACK)) == 0)
+	else if (strncmp(data, cSSLRECV_ACK, strlen(cSSLRECV_ACK)) == 0)
 	{
-		sslRecvFound = 1;
-	}
-	else
-	{
-		if (handleData != 0 && sslRecvFound && byte2receive > 0)
+		int byte2receive = atoi(data + strlen(cSSLRECV_ACK));
+		char* dataStart = strstr(data + strlen(cSSLRECV_ACK), "\n\r");
+
+		if (dataStart != 0 && handleData != 0)
 		{
-			byte2receive -= strlen(token);
-			cb(token);
+			handleData(dataStart, byte2receive);
 		}
-	}*/
 
-	return AT_NONE;
-}
-
-static at_err_code_t cmd_response_parser(char* token, at_err_code_t(*cb)(const char*))
-{
-	const char cOK[] = "OK\r";
-	const char cERROR[] = "ERROR\r";	
-	
-	if (strncmp(token, cOK, strlen(token)) == 0)
-	{
 		return AT_OK;
-	}
-	else if (strncmp(token, cERROR, strlen(token)) == 0)
-	{
-		return AT_ERR;
-	}		
-	else if (cb != 0)
-	{
-		cb(token);
-	}
+	}	
 
 	return AT_NONE;
 }
 
-at_err_code_t processResponse(char* buff, at_err_code_t(*processor)(const char*, void(*cb)(const char*)), void(*cb)(const char*))
+at_err_code_t processResponse(char* buff, void(*cb)(const char*))
 {
-	const char s[2] = "\n";
-	char *token;
+	const char s[] = "\n";
+	const char cOK[] = "OK\r";
+	const char cERROR[] = "ERROR\r";
 
-	/* get the first token */
+	char *token;
+		
 	token = strtok(buff, s);
 
 	at_err_code_t res = AT_NONE;
-
-	/* walk through other tokens */
-	while (token != NULL)
+		
+	while (token != 0)
 	{
-		res = processor(token, cb);
-
-		if (res != AT_NONE)
+		if (strncmp(token, cOK, strlen(token)) == 0)
 		{
-			return res;
+			return AT_OK;
+		}
+		else if (strncmp(token, cERROR, strlen(token)) == 0)
+		{
+			return AT_ERR;
+		}
+		else if (cb != 0)
+		{
+			cb(token);
 		}
 
 		token = strtok(NULL, s);
@@ -146,7 +118,7 @@ at_err_code_t at_req(const char* cmd, void(*cb)(const char*))
 			{
 				__trace_at_in(buff, resLen);
 
-				res = processResponse(buff, cmd_response_parser, cb);
+				res = processResponse(buff, cb);
 				
 				__trace_log("RES=%d",res);
 
@@ -198,11 +170,6 @@ at_err_code_t at_raw(const char* data, int len)
 	return AT_OK;
 }
 
-//at_err_code_t process_response(const char* data, int len, void(*handleData)(const char*, int))
-//{
-//
-//}
-
 at_err_code_t at_recv(void(*handleData)(const char*,int))
 {
 	at_err_code_t res = AT_NONE;
@@ -218,16 +185,8 @@ at_err_code_t at_recv(void(*handleData)(const char*,int))
 			__trace_at_in(buff, resLen);
 
 			res = recv_response_processor(buff, resLen, handleData);
-			//res = processResponse(buff, recv_response_processor, cb);
-
-			__trace_log("RES=%d", res);
-
-			if (res != AT_NONE) //return result
-			{
-				return res;
-			}
 			
-			//else - wait longer
+			__trace_log("RES=%d", res);			
 		}
 	}
 

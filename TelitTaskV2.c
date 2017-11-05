@@ -5,6 +5,8 @@
 
 #include "telit_api.h"
 #include "util.h"
+#include "azure.h"
+#include "common.h"
 
 extern void openComPort();
 
@@ -12,7 +14,11 @@ extern void openComPort();
 static const char cfg_APN[]			= "www.ab.kyivstar.net";
 static const char cfg_BLOB[]		= "farmedge.blob.core.windows.net";
 static const char cfg_HUB[]			= "farmedge.azure-devices.net";
+static const char cfg_DEVICE_ID[]	= "WeatherStation";
+static const char cfg_API_VER[]		= "2016-11-14";
+static const char cfg_SAS[]			= "SharedAccessSignature sr=farmedge.azure-devices.net&sig=yxUw4DSR58ZRkzngZNcUfZHE9hDrs%2FB12nIeKXX5it4%3D&se=1539956606&skn=device";
 
+/////////////////////////////////////////////////////////////////////////////////
 static const char at_INIT[]			= "E0Q0V1X1&K0";
 static const char at_REBOOT[]		= "#REBOOT";
 static const char at_CMEE[]			= "+CMEE=2";
@@ -25,6 +31,9 @@ static const char at_SSLD[]			= "#SSLD=1,443,\"%s\",0,1";
 static const char at_SSLH[]			= "#SSLH=1";
 static const char at_SSLSEND[]		= "#SSLSEND=1";
 
+/////////////////////////////////////////////////////////////////////////////////
+#define INPUT_BUFF_SIZE 3000
+static char _input_buffer[INPUT_BUFF_SIZE];
 
 /////////////////////////////////////////////////////////////////////////////////
 // Callbacks
@@ -57,20 +66,21 @@ void requestDownloadFirmware(const char* token)
 			"Host: farmedge.blob.core.windows.net\n"\
 			"\n";
 		const char end[] = { (char)0x1A, (char)0x0D, 0 };
+
 		at_raw(getFirm, strlen(getFirm));
 		at_raw(end, strlen(end));
 	}
 }
 
-static char _firm[3000];
-void onDownloadFirmResponse(const char* data)
+void onProcessResponse(const char* data, int len)
 {
-	//static int i = 0;
+	static int i = 0;
 
-	strncat(_firm, data, strlen(data));
-	//i += strlen(data);
-
-	//__trace_log(":%s", data);
+	if ((i + len) < sizeof(INPUT_BUFF_SIZE))
+	{
+		memcpy(_input_buffer, data, len);
+		i += len;
+	}
 }
 
 void requestGetConfig(const char* token)
@@ -82,14 +92,20 @@ void requestGetConfig(const char* token)
 	static const char cPrompt[] = ">";
 	if (strncmp(token, cPrompt, strlen(cPrompt)) == 0)
 	{
-		const char end[] = { (char)0x1A, (char)0x0D };
+		const char end[] = { (char)0x1A, (char)0x0D, 0 };
+		const char cGET_MSG[] = "GET /devices/%s/messages/devicebound?api-version=%s HTTP/1.1\n"\
+			"Host: %s\n"\
+			"Authorization: %s\n\n";
+		
+		char buff[200];
+		sprintf(buff, cGET_MSG,
+			cfg_DEVICE_ID,
+			cfg_API_VER,
+			cfg_HUB,
+			cfg_SAS);
 
-		at_raw("abcdef12345", 11);
-		at_raw(end, 2);
-		/*at_cmd
-		at = $"GET /firmware/baltimore.cer HTTP/1.1\n" +
-		"Host: farmedge.blob.core.windows.net\n" +
-		"\n" + (char)0x1A + (char)0x0D,*/
+		at_raw(buff, strlen(buff));
+		at_raw(end, strlen(end));		
 	}
 }
 
@@ -118,36 +134,63 @@ void downloadFirmware()
 {
 	at_cmd_arg(at_SSLD, cfg_BLOB);
 	at_req(at_SSLSEND, requestDownloadFirmware);
-	at_recv(onDownloadFirmResponse);
+	at_recv(onProcessResponse);
 	at_cmd(at_SSLH);
 
-	printf("\n\r\[Response]:\n\r%s\n\r",_firm);
+	printf("\n\r[Response]:\n\r%s\n\r",_input_buffer);
 }
 
 void retrieveConfig()
 {
 	at_cmd_arg(at_SSLD, cfg_HUB);
-	at_req(at_SSLSEND, requestGetConfig);
+		
+	device_config_t devCfg;
+	
+	int res = 0;
+	do
+	{
+		at_req(at_SSLSEND, requestGetConfig);
+		at_recv(onProcessResponse);
+		int res = parseDeviceConfig(_input_buffer, strlen(_input_buffer), &devCfg);
+	} while (res == 1);
+
 	at_cmd(at_SSLH);
 }
+
+void sendStatus()
+{
+	at_cmd_arg(at_SSLD, cfg_HUB);
+
+	at_cmd(at_SSLH);
+}
+
+void sendTelemetry()
+{
+	at_cmd_arg(at_SSLD, cfg_HUB);
+
+	at_cmd(at_SSLH);
+}
+/////////////////////////////////////////////////////////////////////////////////
 
 int main()
 {
 	openComPort();
 
-	//at_cmd_send(at_REBOOT);
-	//sleep(7000);
+	at_cmd_send(at_REBOOT);
+	sleep(5000);
 	//printf("Press any key...\n\r");
 	//_getch();
 
 	if (initModem())
-	{
+	{		
+		retrieveConfig();		
+		sendStatus();
+		sendTelemetry();
 		downloadFirmware();
-		//retrieveConfig();		
 	}
 
 	printf("Press any key to exit\r\n");
-	_getch();
+	getchar();
 
     return 0;
 }
