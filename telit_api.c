@@ -13,7 +13,7 @@ extern int comRead(char *buff, int bufSize);
 
 #define INPUT_BUFF_SIZE 256
 #define MAX_RECV_TIMEOUT 5
-#define CMD_RETRY_COUNT	3
+#define CMD_RETRY_COUNT	5
 #define MAX_RECV_BYTES 900
 
 void at_cmd_send(const char* cmd);
@@ -25,7 +25,10 @@ static at_err_code_t recv_response_processor(const char* data, int len, void(*ha
 	const char cSSLRECV[] = "#SSLRECV=1,%d";
 	const char cSSLRECV_ACK[] = "#SSLRECV:";
 	
-	if (strncmp(data, cRING, strlen(cRING)) == 0)
+	static int byte2receive = 0;
+
+	char* tokenStart;
+	if (strstr(data, cRING) != 0)
 	{		
 		char cmd[20];
 		sprintf(cmd, cSSLRECV, MAX_RECV_BYTES);
@@ -34,18 +37,33 @@ static at_err_code_t recv_response_processor(const char* data, int len, void(*ha
 
 		return AT_NONE;
 	}
-	else if (strncmp(data, cSSLRECV_ACK, strlen(cSSLRECV_ACK)) == 0)
+	else if ((tokenStart = strstr(data, cSSLRECV_ACK)) != 0)
 	{
-		int byte2receive = atoi(data + strlen(cSSLRECV_ACK));
-		char* dataStart = strstr(data + strlen(cSSLRECV_ACK), "\n\r");
+		byte2receive = atoi(tokenStart + strlen(cSSLRECV_ACK));
+		__trace_log("byte2receive=%d", byte2receive);
+		char* dataStart = strstr(tokenStart + strlen(cSSLRECV_ACK), "\r\n");
+		dataStart += 2; //CR+LF
+		int availableBytes = len - (dataStart - data);
+		__trace_log("availableBytes=%d", availableBytes);
 
 		if (dataStart != 0 && handleData != 0)
 		{
-			handleData(dataStart, byte2receive);
+			int dataSize = min(availableBytes, byte2receive);
+			__trace_log("dataSize=%d", dataSize);
+			handleData(dataStart, dataSize);
+
+			byte2receive -= dataSize;
 		}
 
 		return AT_OK;
-	}	
+	}
+	else if (byte2receive > 0 && handleData != 0)
+	{	
+		int dataSize = min(len, byte2receive);
+		__trace_log("READ: dataSize=%d", dataSize);
+		handleData(data, dataSize);
+		byte2receive -= dataSize;
+	}
 
 	return AT_NONE;
 }
@@ -141,7 +159,7 @@ at_err_code_t at_req(const char* cmd, void(*cb)(const char*))
 		}
 
 		retry++;
-		sleep(3000);
+		sleep(MAX_RECV_TIMEOUT * 1000);
 	}	
 
 	return res;

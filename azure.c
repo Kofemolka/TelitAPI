@@ -9,12 +9,20 @@ int parseDeviceConfig(const char* data, int len, device_config_t* cfg)
 {
 	if (cfg == 0)
 		return -1;
+	
+	cfg->etag[0] = 0;
+	cfg->firmware_url[0] = 0;
+	cfg->sas[0] = 0;
+	cfg->last_telemetry = -1;
+	cfg->poll_period = -1;
 
 	const char s[2] = "\n";
-#define _IOT_HUB_PREF "iothub-app"	
+	const char cETag[] = "ETag:";
+
+#define _IOT_HUB_PREF "iothub-app-"	
 	const char cSAS[] = _IOT_HUB_PREF"SAS:";
 	const char cFIRMWARE[] = _IOT_HUB_PREF"Firmware:";
-	const char cPOLL_INTERVAL[] = _IOT_HUB_PREF"PollPeriod:";
+	const char cPOLL_INTERVAL[] = _IOT_HUB_PREF"PollInterval:";
 	const char cLAST_TELEMETRY[] = _IOT_HUB_PREF"LastTelemetry:";
 #undef _IOT_HUB_PREF
 
@@ -24,7 +32,11 @@ int parseDeviceConfig(const char* data, int len, device_config_t* cfg)
 	
 	while (token != 0)
 	{
-		if (strncmp(token, cSAS, strlen(cSAS)) == 0)
+		if (strncmp(token, cETag, strlen(cETag)) == 0)
+		{
+			strtrim(token + strlen(cETag), cfg->etag);
+		}
+		else if (strncmp(token, cSAS, strlen(cSAS)) == 0)
 		{
 			strtrim(token + strlen(cSAS), cfg->sas);			
 		}

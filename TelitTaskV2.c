@@ -34,6 +34,8 @@ static const char at_SSLSEND[]		= "#SSLSEND=1";
 /////////////////////////////////////////////////////////////////////////////////
 #define INPUT_BUFF_SIZE 3000
 static char _input_buffer[INPUT_BUFF_SIZE];
+#define OUTPUT_BUFF_SIZE 1000
+static char _output_buffer[OUTPUT_BUFF_SIZE];
 
 /////////////////////////////////////////////////////////////////////////////////
 // Callbacks
@@ -76,9 +78,9 @@ void onProcessResponse(const char* data, int len)
 {
 	static int i = 0;
 
-	if ((i + len) < sizeof(INPUT_BUFF_SIZE))
+	if ((i + len) < INPUT_BUFF_SIZE)
 	{
-		memcpy(_input_buffer, data, len);
+		memcpy(_input_buffer+i, data, len);
 		i += len;
 	}
 }
@@ -96,15 +98,15 @@ void requestGetConfig(const char* token)
 		const char cGET_MSG[] = "GET /devices/%s/messages/devicebound?api-version=%s HTTP/1.1\n"\
 			"Host: %s\n"\
 			"Authorization: %s\n\n";
-		
-		char buff[200];
-		sprintf(buff, cGET_MSG,
+				
+		sprintf(_output_buffer,
+			cGET_MSG,
 			cfg_DEVICE_ID,
 			cfg_API_VER,
 			cfg_HUB,
 			cfg_SAS);
 
-		at_raw(buff, strlen(buff));
+		at_raw(_output_buffer, strlen(_output_buffer));
 		at_raw(end, strlen(end));		
 	}
 }
@@ -177,7 +179,7 @@ int main()
 	openComPort();
 
 	at_cmd_send(at_REBOOT);
-	sleep(5000);
+	sleep(8000);
 	//printf("Press any key...\n\r");
 	//_getch();
 
