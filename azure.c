@@ -5,10 +5,10 @@
 #include "util.h"
 #include "common.h"
 
-int parseDeviceConfig(const char* data, int len, device_config_t* cfg)
+device_config_status_t parseDeviceConfig(const char* data, int len, device_config_t* cfg)
 {
 	if (cfg == 0)
-		return -1;
+		return DEV_CFG_NONE;
 	
 	cfg->etag[0] = 0;
 	cfg->firmware_url[0] = 0;
@@ -28,13 +28,29 @@ int parseDeviceConfig(const char* data, int len, device_config_t* cfg)
 
 	char *token;
 
+	device_config_status_t status = DEV_CFG_NONE;
+
 	token = strtok((char*)(data), s);
 	
 	while (token != 0)
 	{
 		if (strncmp(token, cETag, strlen(cETag)) == 0)
 		{
-			strtrim(token + strlen(cETag), cfg->etag);
+			//ETag: "3da1f730-589c-467a-9fd9-fcf8b14c7687"
+			char* begin = strstr(token, "\"");
+			if (begin != 0)
+			{
+				begin += 1;
+				char* end = strstr(begin, "\"");
+				if (end != 0)
+				{
+					unsigned int tagLen = min(sizeof(cfg->etag), end - begin);
+					__trace_log("ETag=%.*s", tagLen, begin);
+					strncpy(cfg->etag, begin, tagLen);
+
+					status = DEV_CFG_OK;
+				}
+			}			
 		}
 		else if (strncmp(token, cSAS, strlen(cSAS)) == 0)
 		{
@@ -59,5 +75,6 @@ int parseDeviceConfig(const char* data, int len, device_config_t* cfg)
 
 		token = strtok(0, s);
 	}
-	return 0;
+
+	return status;
 }

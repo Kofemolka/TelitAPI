@@ -33,9 +33,19 @@ static const char at_SSLSEND[]		= "#SSLSEND=1";
 
 /////////////////////////////////////////////////////////////////////////////////
 #define INPUT_BUFF_SIZE 3000
-static char _input_buffer[INPUT_BUFF_SIZE];
+
+typedef struct
+{
+	unsigned int head;
+	char data[INPUT_BUFF_SIZE];
+} data_buffer_t;
+
+static data_buffer_t _input_buffer;
+
 #define OUTPUT_BUFF_SIZE 1000
 static char _output_buffer[OUTPUT_BUFF_SIZE];
+
+static device_config_t devCfg;
 
 /////////////////////////////////////////////////////////////////////////////////
 // Callbacks
@@ -76,12 +86,10 @@ void requestDownloadFirmware(const char* token)
 
 void onProcessResponse(const char* data, int len)
 {
-	static int i = 0;
-
-	if ((i + len) < INPUT_BUFF_SIZE)
+	if ((_input_buffer.head + len) < INPUT_BUFF_SIZE)
 	{
-		memcpy(_input_buffer+i, data, len);
-		i += len;
+		memcpy(_input_buffer.data+ _input_buffer.head, data, len);
+		_input_buffer.head += len;
 	}
 }
 
@@ -108,6 +116,30 @@ void requestGetConfig(const char* token)
 
 		at_raw(_output_buffer, strlen(_output_buffer));
 		at_raw(end, strlen(end));		
+	}
+}
+
+void requestDeleteConfig(const char* token)
+{
+	const char end[] = { (char)0x1A, (char)0x0D, 0 };
+	const char cDEL_MSG[] =
+		"DELETE /devices/%s/messages/devicebound/%s?api-version=%s HTTP/1.1\n"\
+		"Host: %s\n"\
+		"Authorization: %s\n\n";
+		
+	static const char cPrompt[] = ">";
+	if (strncmp(token, cPrompt, strlen(cPrompt)) == 0)
+	{
+		sprintf(_output_buffer,
+			cDEL_MSG,
+			cfg_DEVICE_ID,
+			devCfg.etag,
+			cfg_API_VER,
+			cfg_HUB,
+			cfg_SAS);
+
+		at_raw(_output_buffer, strlen(_output_buffer));
+		at_raw(end, strlen(end));
 	}
 }
 
@@ -139,22 +171,33 @@ void downloadFirmware()
 	at_recv(onProcessResponse);
 	at_cmd(at_SSLH);
 
-	printf("\n\r[Response]:\n\r%s\n\r",_input_buffer);
+	printf("\n\r[Response]:\n\r%s\n\r",_input_buffer.data);
+}
+
+void acknowledgeConfig()
+{
+	at_req(at_SSLSEND, requestDeleteConfig);
+	at_recv(0);
 }
 
 void retrieveConfig()
 {
 	at_cmd_arg(at_SSLD, cfg_HUB);
-		
-	device_config_t devCfg;
 	
-	int res = 0;
+	device_config_status_t status;
 	do
 	{
 		at_req(at_SSLSEND, requestGetConfig);
+
+		_input_buffer.head = 0;
 		at_recv(onProcessResponse);
-		int res = parseDeviceConfig(_input_buffer, strlen(_input_buffer), &devCfg);
-	} while (res == 1);
+
+		status = parseDeviceConfig(_input_buffer.data, _input_buffer.head, &devCfg);
+		if (status == DEV_CFG_OK)
+		{
+			acknowledgeConfig();
+		}
+	} while (status == DEV_CFG_OK); //loop until there are no config to be pulled
 
 	at_cmd(at_SSLH);
 }
@@ -178,8 +221,8 @@ int main()
 {
 	openComPort();
 
-	at_cmd_send(at_REBOOT);
-	sleep(8000);
+	//at_cmd_send(at_REBOOT);
+	//sleep(8000);
 	//printf("Press any key...\n\r");
 	//_getch();
 
