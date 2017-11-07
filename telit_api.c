@@ -12,7 +12,7 @@ extern void comSend(const char* data, int len);
 extern int comRead(char *buff, int bufSize);
 
 #define INPUT_BUFF_SIZE 256
-#define MAX_RECV_TIMEOUT 5
+#define MAX_RECV_TIMEOUT 10
 #define CMD_RETRY_COUNT	5
 #define MAX_RECV_BYTES 900
 
@@ -20,7 +20,7 @@ void at_cmd_send(const char* cmd);
 
 static at_err_code_t recv_response_processor(const char* data, int len, void(*handleData)(const char*, int))
 {
-	const char cOK[] = "OK\r";
+	const char cOK[] = "\r\nOK\r\n";
 	const char cRING[] = "SSLSRING:";
 	const char cSSLRECV[] = "#SSLRECV=1,%d";
 	const char cSSLRECV_ACK[] = "#SSLRECV:";
@@ -54,15 +54,18 @@ static at_err_code_t recv_response_processor(const char* data, int len, void(*ha
 
 			byte2receive -= dataSize;
 		}
-
-		return AT_OK;
 	}
 	else if (byte2receive > 0 && handleData != 0)
 	{	
 		int dataSize = min(len, byte2receive);
 		__trace_log("READ: dataSize=%d", dataSize);
 		handleData(data, dataSize);
-		byte2receive -= dataSize;
+		byte2receive -= dataSize;		
+	}
+
+	if (strstr(data, cOK) != 0)
+	{
+		return AT_OK;
 	}
 
 	return AT_NONE;
@@ -204,7 +207,12 @@ at_err_code_t at_recv(void(*handleData)(const char*,int))
 
 			res = recv_response_processor(buff, resLen, handleData);
 			
-			__trace_log("RES=%d", res);			
+			__trace_log("RES=%d", res);	
+
+			if (res == AT_OK)
+			{
+				return res;
+			}
 		}
 	}
 
