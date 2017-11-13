@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <windows.h>
 
+#include "common.h"
 #include "util.h"
 
 #define _TRACE_WHITE_ "                                                                                          "
@@ -57,7 +58,7 @@ void strtrim(const char *src, char* dest)
 	}
 
 	// Trim trailing space
-	end = src + strlen(src) - 1;
+	end = (char*)src + strlen(src) - 1;
 	while (end > src && is_space(*end)) end--;
 
 	strncpy(dest, src, end - src + 1);

@@ -14,7 +14,6 @@ extern void openComPort();
 static const char cfg_APN[]			= "www.ab.kyivstar.net";
 static const char cfg_BLOB[]		= "farmedge.blob.core.windows.net";
 static const char cfg_HUB[]			= "farmedge.azure-devices.net";
-//static const char cfg_HUB[]			= "pot.slobodyan.org";
 static const char cfg_DEVICE_ID[]	= "WeatherStation";
 static const char cfg_API_VER[]		= "2016-11-14";
 static const char cfg_SAS[]			= "SharedAccessSignature sr=farmedge.azure-devices.net&sig=yxUw4DSR58ZRkzngZNcUfZHE9hDrs%2FB12nIeKXX5it4%3D&se=1539956606&skn=device";
@@ -44,7 +43,16 @@ static const char c_post_msg[] =
 "Content-Length: %d\n"\
 "\n"\
 "%s"\
-"%s"; 
+"%s";
+
+static const char c_post_msg_chunked[] =
+"POST /devices/%s/messages/events?api-version=%s HTTP/1.1\n"\
+"Host: %s\n"\
+"Authorization: %s\n"\
+"Content-Type: application/json\n"\
+"Transfer-Encoding: chunked\n"\
+"\n";
+
 static const char c_msg_type_status[]		= "[Status]\n";
 static const char c_msg_type_telemetry[]	= "[Telemetry]\n";
 
@@ -181,23 +189,35 @@ void requestSendTelemetry(const char* token)
 {
 	if (strncmp(token, c_prompt, strlen(c_prompt)) == 0)
 	{
-		const char cTEST_TELEMETRY[] =
-			"2700147848000                                        15M2017 - 11 - 07 12:180303030303030503092930311014\n"\
-			"201711071215                                                    64.1    15.4    00.0    170     003     000\n"\
-			"201711071200                                                    66.4    15.6    00.0    169     003     001\n"\
-			"201711071145                                                    57.7    17.1    00.0    159     001     000";
+		const char* cTEST_TELEMETRY[4] =
+		{ 
+		  "2700147848000                                        15M2017 - 11 - 07 12:180303030303030503092930311014\n" ,
+		  "201711071215                                                    64.1    15.4    00.0    170     003     000\n",
+		  "201711071200                                                    66.4    15.6    00.0    169     003     001\n",
+		  "201711071145                                                    57.7    17.1    00.0    159     001     000" };
 
 		sprintf(_output_buffer,
-			c_post_msg,
+			c_post_msg_chunked,
 			cfg_DEVICE_ID,
 			cfg_API_VER,
 			cfg_HUB,
-			cfg_SAS,
-			strlen(cTEST_TELEMETRY) + strlen(c_msg_type_telemetry),
-			c_msg_type_telemetry,
-			cTEST_TELEMETRY);;
+			cfg_SAS);
 
 		at_raw(_output_buffer, strlen(_output_buffer));
+
+		for (int chunk = 0; chunk < 4; chunk++)
+		{
+			sprintf(_output_buffer,
+				"%x\r\n"\
+				"%s\r\n",
+				strlen(cTEST_TELEMETRY[chunk]),
+			    cTEST_TELEMETRY[chunk]);
+
+			at_raw(_output_buffer, strlen(_output_buffer));
+		}
+
+		const char endChunk[] = "0\r\n\r\n";
+		at_raw(endChunk, strlen(endChunk));
 		at_raw(c_end, strlen(c_end));
 	}
 }
@@ -279,8 +299,8 @@ int main()
 
 	//at_cmd_send(at_REBOOT);
 	//sleep(8000);
-	//printf("Press any key...\n\r");
-	//_getch();
+	printf("Press any key...\n\r");
+	getchar();
 
 	if (initModem())
 	{		

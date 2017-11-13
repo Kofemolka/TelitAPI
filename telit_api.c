@@ -107,7 +107,7 @@ at_err_code_t processResponse(char* buff, void(*cb)(const char*))
 void at_cmd_send(const char* cmd)
 {
 	char buff[INPUT_BUFF_SIZE];
-	sprintf(buff, "AT%s\r\0", cmd);
+	sprintf(buff, "AT%s\r", cmd);
 	comSend(buff, strlen(buff));
 
 	__trace_at_out(buff);
@@ -185,7 +185,7 @@ at_err_code_t at_cmd_arg(const char* cmd, ...)
 at_err_code_t at_raw(const char* data, int len)
 {
 	comSend(data, len);
-
+	
 	__trace_at_out(data);
 
 	return AT_OK;
